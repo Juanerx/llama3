@@ -46,6 +46,7 @@ class RMSNorm(torch.nn.Module):
         return output * self.weight
 
 
+# 计算好每个位置的token，和token embedding每个位置要旋转的角度theta，并用复数表示
 def precompute_freqs_cis(dim: int, end: int, theta: float = 10000.0):
     freqs = 1.0 / (theta ** (torch.arange(0, dim, 2)[: (dim // 2)].float() / dim))
     t = torch.arange(end, device=freqs.device, dtype=torch.float32)
@@ -61,7 +62,7 @@ def reshape_for_broadcast(freqs_cis: torch.Tensor, x: torch.Tensor):
     shape = [d if i == 1 or i == ndim - 1 else 1 for i, d in enumerate(x.shape)]
     return freqs_cis.view(*shape)
 
-
+# 把embedding两两分为一组，转化为复数去做计算，然后再转为实数
 def apply_rotary_emb(
     xq: torch.Tensor,
     xk: torch.Tensor,
@@ -168,6 +169,7 @@ class Attention(nn.Module):
         keys = self.cache_k[:bsz, : start_pos + seqlen]
         values = self.cache_v[:bsz, : start_pos + seqlen]
 
+        # 用的group query attention,所以需要repeat kv head到q head的数量
         # repeat k/v heads if n_kv_heads < n_heads
         keys = repeat_kv(
             keys, self.n_rep
@@ -291,6 +293,7 @@ class Transformer(nn.Module):
             # only for the new sequence. Thus, the matrix of scores is of size
             # (seqlen, cache_len + seqlen), and the only masked entries are (i, j) for
             # j > cache_len + i, since row i corresponds to token cache_len + i.
+            #这里mask的size为(seqlen, cache_len + seqlen),保证attention计算时只计算新的sequence，并不会看到后面的token
             mask = torch.hstack(
                 [torch.zeros((seqlen, start_pos), device=tokens.device), mask]
             ).type_as(h)
